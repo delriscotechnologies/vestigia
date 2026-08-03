@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ArrowDown } from "lucide-react";
 
 const newestIncomingBatch = [
@@ -1078,6 +1079,53 @@ const entries = [
 
 const latestEntryId = entries[0].id;
 
+const lightLeakVariantsByEntry = new Map([
+  ["016", 1],
+  ["023", 2],
+  ["053", 3],
+  ["067", 4],
+  ["103", 5],
+  ["124", 6],
+]);
+
+const filmBurnEntryIndexes = new Set(["017", "020", "039", "100", "104"]);
+
+const documentaryGrainEntryIndexes = new Set([
+  "001", "005", "007", "019", "028", "029", "035", "042", "052", "062",
+  "063", "072", "078", "083", "091", "093", "109", "114", "115", "118",
+  "119", "125", "127", "128", "130", "131", "133", "134", "135", "136",
+  "137", "138",
+]);
+
+const objectTitleEntryIndexes = new Set([
+  "002", "003", "004", "005", "006", "007", "008", "011", "012", "015",
+  "019", "022", "025", "030", "031", "034", "035", "037", "043", "044",
+  "045", "046", "047", "049", "052", "054", "055", "056", "057", "060",
+  "061", "066", "069", "074", "083", "096", "098", "102", "108", "109",
+  "112", "117", "119", "125", "126", "129", "138", "145",
+]);
+
+const urbanTitleEntryIndexes = new Set([
+  "001", "009", "010", "014", "017", "018", "021", "024", "026", "027",
+  "029", "041", "042", "048", "051", "053", "062", "072", "073", "075",
+  "076", "078", "079", "084", "090", "091", "093", "094", "097", "099",
+  "101", "110", "113", "114", "115", "118", "120", "122", "123", "124",
+  "127", "128", "130", "131", "133", "134", "135", "136", "137",
+]);
+
+function getFilmEffect(index) {
+  if (filmBurnEntryIndexes.has(index)) return "burn";
+  if (lightLeakVariantsByEntry.has(index)) return "light-leak";
+  if (documentaryGrainEntryIndexes.has(index)) return "grain";
+  return null;
+}
+
+function getWordCategory(index) {
+  if (objectTitleEntryIndexes.has(index)) return "object";
+  if (urbanTitleEntryIndexes.has(index)) return "urban";
+  return "memory";
+}
+
 function scrollToId(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 }
@@ -1086,7 +1134,25 @@ function Entry({ entry, isFirst }) {
   const nextId = entries[entries.findIndex((item) => item.id === entry.id) + 1]?.id ?? "about";
   const entryClassName = entry.layout ? `entry entry--${entry.layout}` : "entry";
   const frameModifier = entry.layout ?? entry.fit;
-  const frameClassName = frameModifier ? `photo-frame photo-frame--${frameModifier}` : "photo-frame";
+  const filmEffect = getFilmEffect(entry.index);
+  const filmIndex = Number.parseInt(entry.index, 10);
+  const filmDirection = filmIndex % 2 === 0 ? "reverse" : "forward";
+  const lightLeakVariant = lightLeakVariantsByEntry.get(entry.index);
+  const frameClassName = [
+    "photo-frame",
+    frameModifier ? `photo-frame--${frameModifier}` : "",
+    filmEffect ? `photo-frame--film-${filmEffect}` : "",
+  ].filter(Boolean).join(" ");
+  const filmOverlayClassName = [
+    "film-overlay",
+    filmEffect ? `film-overlay--${filmEffect}` : "",
+    filmEffect === "light-leak" ? `film-overlay--leak-${lightLeakVariant}` : "",
+    filmEffect === "burn" ? `film-overlay--${filmDirection}` : "",
+  ].filter(Boolean).join(" ");
+  const wordLength = entry.word.replace(/\s/g, "").length;
+  const wordSize = wordLength >= 10 ? "long" : wordLength >= 7 ? "medium" : "short";
+  const wordCategory = getWordCategory(entry.index);
+  const wordClassName = `entry__word entry__word--${wordSize} entry__word--${wordCategory}`;
 
   return (
     <article className={entryClassName} id={entry.id}>
@@ -1099,6 +1165,7 @@ function Entry({ entry, isFirst }) {
           loading={isFirst ? "eager" : "lazy"}
           fetchPriority={isFirst ? "high" : "auto"}
         />
+        {filmEffect ? <span className={filmOverlayClassName} aria-hidden="true" /> : null}
       </figure>
 
       <div className="entry__meta">
@@ -1110,31 +1177,98 @@ function Entry({ entry, isFirst }) {
         </button>
       </div>
 
-      <p className="entry__word" aria-hidden="true">{entry.word}</p>
+      <p className={wordClassName} aria-hidden="true">{entry.word}</p>
     </article>
   );
 }
 
 export function App() {
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeSection, setActiveSection] = useState("latest");
+
+  useEffect(() => {
+    let animationFrame;
+
+    const updateScrollProgress = () => {
+      if (animationFrame) return;
+
+      animationFrame = window.requestAnimationFrame(() => {
+        const maximumScroll = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = maximumScroll > 0 ? window.scrollY / maximumScroll : 0;
+        setScrollProgress(Math.min(Math.max(progress, 0), 1));
+        animationFrame = undefined;
+      });
+    };
+
+    const aboutSection = document.getElementById("about");
+    const aboutObserver = new IntersectionObserver(
+      ([observation]) => setActiveSection(observation.isIntersecting ? "about" : "latest"),
+      { threshold: 0.35 },
+    );
+
+    if (aboutSection) aboutObserver.observe(aboutSection);
+    updateScrollProgress();
+    window.addEventListener("scroll", updateScrollProgress, { passive: true });
+    window.addEventListener("resize", updateScrollProgress);
+
+    return () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      aboutObserver.disconnect();
+      window.removeEventListener("scroll", updateScrollProgress);
+      window.removeEventListener("resize", updateScrollProgress);
+    };
+  }, []);
+
   return (
     <>
       <a className="skip-link" href={`#${latestEntryId}`}>Skip to photographs</a>
 
       <header className="site-header">
         <nav aria-label="Primary navigation">
-          <a className="is-active" href={`#${latestEntryId}`}>LATEST</a>
-          <a href="#about">ABOUT</a>
+          <a
+            className={activeSection === "latest" ? "is-active" : ""}
+            href={`#${latestEntryId}`}
+            aria-current={activeSection === "latest" ? "location" : undefined}
+            onClick={() => setActiveSection("latest")}
+          >
+            LATEST
+          </a>
+          <a
+            className={activeSection === "about" ? "is-active" : ""}
+            href="#about"
+            aria-current={activeSection === "about" ? "location" : undefined}
+            onClick={() => setActiveSection("about")}
+          >
+            ABOUT
+          </a>
         </nav>
       </header>
 
+      <div
+        className="scroll-progress"
+        role="progressbar"
+        aria-label="Page scroll progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={Math.round(scrollProgress * 100)}
+      >
+        <span style={{ transform: `scaleY(${scrollProgress})` }} />
+      </div>
+
       <main>
         <section className="entries" aria-label="Photo journal">
-          {entries.map((entry, index) => <Entry key={entry.id} entry={entry} isFirst={index === 0} />)}
+          {entries.map((entry, index) => (
+            <Entry
+              key={entry.id}
+              entry={entry}
+              isFirst={index === 0}
+            />
+          ))}
         </section>
 
         <footer id="about">
-          <p className="eyebrow">ABOUT THIS JOURNAL</p>
-          <p>A personal archive of photographs, presented in the order they are published.</p>
+          <p className="eyebrow">ABOUT VESTIGIA</p>
+          <p className="about-copy">Vestigia holds the traces a moment leaves behind—an evolving archive of photographs kept in the order they entered memory.</p>
           <a href={`#${latestEntryId}`}>BACK TO LATEST</a>
         </footer>
       </main>
