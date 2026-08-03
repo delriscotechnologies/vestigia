@@ -1,6 +1,6 @@
 <div align="center">
 
-#VESTIGIA
+# VESTIGIA
 
 *A personal visual archive of places, moments, and memory.*
 
