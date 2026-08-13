@@ -11,5 +11,3 @@
 ---
 
 Vestigia gathers photographs in the order they are published—an evolving record of what remains after a moment passes.
-
-> No categories. No rearrangement. Only traces, preserved as they arrived.
